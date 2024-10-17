@@ -75,4 +75,35 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  html, body {
+    overflow-x: hidden;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+}
+
+table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+td,
+th {
+  word-wrap: break-word;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; 
 }

@@ -15,13 +15,12 @@ import { Moon, Sun, Upload, Download, Play, Pause, Pencil, Trash2, Wand2 } from 
 
 
 
-type Character = {
+interface Character {
   id: number;
   name: string;
-  role: string;
   description: string;
-  personality?: string;
-};
+  personality: string;
+}
 
 type Setting = 'country-side' | 'city' | 'forest' | 'beach' | 'mountains' | 'space' | 'arctic';
 type Tone = 'dark' | 'fantasy' | 'witty' | 'romantic' | 'scary' | 'comic' | 'mystery' | 'sci-fi';
@@ -31,10 +30,10 @@ export function StoryGenerator() {
   const { theme, setTheme } = useTheme()
   const [storyMode, setStoryMode] = useState('text')
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [newCharacter, setNewCharacter] = useState({  name: '', role: '', description: '' })
+  const [newCharacter, setNewCharacter] = useState({ name: '', role: '', description: '' })
   const [editingIndex, setEditingIndex] = useState(-1)
-  const [uploadedFile, setUploadedFile] = useState<File|null>(null)
-  const [story, setStory]=  useState("")
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [story, setStory] = useState("")
   const [tone, setTone] = useState<Tone>('witty');
   const [setting, setSetting] = useState<Setting>('country-side');
 
@@ -45,8 +44,8 @@ export function StoryGenerator() {
     tone: '',
     assistant: '',
     accent: '',
-    customAssistantName:'',
-    customAssistantDesc:'',
+    customAssistantName: '',
+    customAssistantDesc: '',
   })
   const [needsNewIndex, setNeedsNewIndex] = useState(true);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -59,6 +58,9 @@ export function StoryGenerator() {
   useEffect(() => {
     setMounted(true)
   }, [])
+  useEffect(() => {
+    console.log("Characters state updated:", characters);
+  }, [characters]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -70,6 +72,7 @@ export function StoryGenerator() {
     }
   };
 
+  // story-generator.tsx
   const extractCharactersFromText = useCallback(() => {
     if (!uploadedFile) {
       alert('Please upload a file first');
@@ -86,30 +89,27 @@ export function StoryGenerator() {
         const response = await fetch('/api/split', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            document: text,
-            chunkSize,
-            chunkOverlap,
-          }),
+          body: JSON.stringify({ document: text, chunkSize, chunkOverlap }),
         });
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        const data = await response.json();
 
-        const extractedCharacters = await response.json();
+        console.log('Characters received from API:', data);
 
-        // Process the extracted characters and update the characters state
-        const formattedCharacters = extractedCharacters.map((charData: any, index: number) => ({
+        // Flatten the nested array and map the characters
+        const extractedCharacters: Character[] = data.flat().map((charData: any, index: number) => ({
           id: index + 1,
           name: charData.name || `Character ${index + 1}`,
-          role: charData.role || 'Unknown role',
-          description: charData.description ||  'No description available',
+          description: charData.description || 'No description available',
+          personality: charData.personality || 'No personality traits provided',
         }));
 
-        setCharacters(formattedCharacters);
+        // Update the characters state
+        setCharacters(extractedCharacters);
+
+        console.log('Characters state updated:', extractedCharacters);
       } catch (error) {
-        console.error('Error during extraction:', error);
+        console.error('Error extracting characters:', error);
       } finally {
         setIsExtracting(false);
       }
@@ -118,10 +118,11 @@ export function StoryGenerator() {
     reader.readAsText(uploadedFile);
   }, [uploadedFile, chunkSize, chunkOverlap]);
 
+
   const formatStory = (rawStory: string) => {
     // Remove extra spaces and line breaks
     let formattedStory = rawStory.replace(/\s+/g, ' ').trim();
-    
+
     // Fix word breaks
     formattedStory = formattedStory.replace(/(\w+)\s+(\w+)/g, (_, p1, p2) => {
       if (p1.length <= 2 || p2.length <= 2) {
@@ -227,7 +228,7 @@ export function StoryGenerator() {
   }
 
   return (
-    <div className="min-h-screen p-8 transition-colors duration-200 bg-background text-foreground">
+    <div className="min-h-screen p-8 bg-background text-foreground">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
         <header className="flex justify-between items-center">
@@ -303,12 +304,13 @@ export function StoryGenerator() {
             <CardTitle>Characters</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
+
+            <Table className="w-full table-auto overflow-x-auto">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>Personality</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -316,8 +318,8 @@ export function StoryGenerator() {
                 {characters.map((char, index) => (
                   <TableRow key={index}>
                     <TableCell>{char.name}</TableCell>
-                    <TableCell>{char.role}</TableCell>
                     <TableCell>{char.description}</TableCell>
+                    <TableCell>{char.personality}</TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
                         <Button variant="ghost" size="icon" onClick={() => editCharacter(index)}>
@@ -405,7 +407,7 @@ export function StoryGenerator() {
                   step={1}
                   value={chunkOverlap}
                   onChange={handleChunkOverlapChange}
-                  />
+                />
                 <LinkedSlider
                   label="Top K:"
                   description="The maximum number of chunks to return from the search."
@@ -542,7 +544,7 @@ export function StoryGenerator() {
               <Textarea
                 className="min-h-[300px]"
                 placeholder="Your story will appear here..."
-                value={story}  // Use 'story' instead of 'generatedStory'
+                value={story}
                 readOnly
               />
             )}
@@ -551,7 +553,7 @@ export function StoryGenerator() {
                 <Textarea
                   className="min-h-[200px]"
                   placeholder="Your story will appear here..."
-                  value={story}  
+                  value={story}
                   readOnly
                 />
                 <div className="flex items-center space-x-2">
