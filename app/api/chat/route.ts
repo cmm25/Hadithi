@@ -120,15 +120,15 @@ async function processBatch(chunks: string[], systemMessage: string, startIndex:
 }
 
 function extractJSON(input: string): string {
-  // Use a regular expression to match the JSON array
-  const match = input.match(/\[\s*[\s\S]*?\s*\]/m);
-  if (match) {
-    return match[0];
-  } else {
-    // Return an empty array if no JSON is found
-    console.warn('No JSON array found in the AI response.');
-    return '[]';
-  }
+    // Use a regular expression to match the JSON array
+    const match = input.match(/\[\s*[\s\S]*?\s*\]/m);
+    if (match) {
+        return match[0];
+    } else {
+        // Return an empty array if no JSON is found
+        console.warn('No JSON array found in the AI response.');
+        return '[]';
+    }
 }
 
 function splitTextIntoChunks(text: string, chunkSize: number, chunkOverlap: number): string[] {

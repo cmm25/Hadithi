@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image';
 import { useTheme } from 'next-themes'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,12 +26,22 @@ interface Character {
 type Setting = 'country-side' | 'city' | 'forest' | 'beach' | 'mountains' | 'space' | 'arctic';
 type Tone = 'dark' | 'fantasy' | 'witty' | 'romantic' | 'scary' | 'comic' | 'mystery' | 'sci-fi';
 
+interface CharData {
+  name?: string;
+  description?: string;
+  personality?: string;
+}
+
 export function StoryGenerator() {
   const [mounted, setMounted] = useState(false)
   const { theme, setTheme } = useTheme()
   const [storyMode, setStoryMode] = useState('text')
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [newCharacter, setNewCharacter] = useState({ name: '', role: '', description: '' })
+  const [newCharacter, setNewCharacter] = useState({
+    name: '',
+    description: '',
+    personality: ''
+  })
   const [editingIndex, setEditingIndex] = useState(-1)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [story, setStory] = useState("")
@@ -55,6 +66,12 @@ export function StoryGenerator() {
   const [temperature, setTemperature] = useState<number>(0.7);
   const [topP, setTopP] = useState<number>(0.9);
 
+  // Livepeer variables to hold story sections
+  const [storySections, setStorySections] = useState<string[]>([]);
+  const [sectionImages, setSectionImages] = useState<string[]>([]);
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -72,7 +89,6 @@ export function StoryGenerator() {
     }
   };
 
-  // story-generator.tsx
   const extractCharactersFromText = useCallback(() => {
     if (!uploadedFile) {
       alert('Please upload a file first');
@@ -97,14 +113,12 @@ export function StoryGenerator() {
         console.log('Characters received from API:', data);
 
         // Flatten the nested array and map the characters
-        const extractedCharacters: Character[] = data.flat().map((charData: any, index: number) => ({
+        const extractedCharacters: Character[] = data.flat().map((charData: CharData, index: number) => ({
           id: index + 1,
           name: charData.name || `Character ${index + 1}`,
           description: charData.description || 'No description available',
           personality: charData.personality || 'No personality traits provided',
         }));
-
-        // Update the characters state
         setCharacters(extractedCharacters);
 
         console.log('Characters state updated:', extractedCharacters);
@@ -150,6 +164,12 @@ export function StoryGenerator() {
 
     return formattedStory;
   };
+
+  // split story into sections
+  function splitStoryIntoSections(story: string): string[] {
+    // Split the story into sections based on your criteria
+    return story.split('\n\n').filter((section) => section.trim() !== '');
+  }
   const generateStory = useCallback(async () => {
     setStory('Generating story...');
     try {
@@ -182,26 +202,74 @@ export function StoryGenerator() {
         const formattedStory = formatStory(storyContent);
         setStory(formattedStory);
       }
+
+      // After the story is fully generated, split it into sections
+      const sections = splitStoryIntoSections(storyContent);
+      setStorySections(sections);
+
+      // Generate images by calling the API
+      await fetchImagesForSections(sections);
+
     } catch (error) {
       console.error('Error generating story:', error);
       setStory('An error occurred while generating the story');
     }
   }, [tone, setting, characters, temperature, topK, topP]);
 
+  async function fetchImagesForSections(sections: string[]) {
+    setIsGeneratingImages(true);
+    try {
+      const response = await fetch('/api/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sections }),
+      });
 
-  const addCharacter = () => {
-    if (newCharacter.name && newCharacter.role) {
-      if (editingIndex === -1) {
-        setCharacters([...characters, { ...newCharacter, id: Date.now(), personality: '' }])
-      } else {
-        const updatedCharacters = [...characters]
-        updatedCharacters[editingIndex] = { ...newCharacter, id: characters[editingIndex].id };
-        setCharacters(updatedCharacters)
-        setEditingIndex(-1)
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Error: ${errorData.error}`);
       }
-      setNewCharacter({ id: Date.now(), name: '', role: '', description: '' })
+
+      const data = await response.json();
+      setSectionImages(data.images);
+
+    } catch (error) {
+      console.error('Error fetching images:', error);
+    } finally {
+      setIsGeneratingImages(false);
     }
   }
+  const prevSlide = () => {
+    setCurrentSlideIndex((prevIndex) =>
+      prevIndex > 0 ? prevIndex - 1 : sectionImages.length - 1
+    );
+  };
+
+  const nextSlide = () => {
+    setCurrentSlideIndex((prevIndex) =>
+      prevIndex < sectionImages.length - 1 ? prevIndex + 1 : 0
+    );
+  };
+
+  const addCharacter = () => {
+    if (newCharacter.name && newCharacter.description) {
+      if (editingIndex === -1) {
+        setCharacters([
+          ...characters,
+          { ...newCharacter, id: Date.now() },
+        ]);
+      } else {
+        const updatedCharacters = [...characters];
+        updatedCharacters[editingIndex] = {
+          ...newCharacter,
+          id: characters[editingIndex].id,
+        };
+        setCharacters(updatedCharacters);
+        setEditingIndex(-1);
+      }
+      setNewCharacter({ name: '', description: '', personality: '' });
+    }
+  };
 
   const editCharacter = (index: number) => {
     setNewCharacter(characters[index])
@@ -213,13 +281,14 @@ export function StoryGenerator() {
     setCharacters(updatedCharacters)
   }
 
-  const handleChunkSizeChange = (value: number) => {
-    setChunkSize(value);
+  const handleChunkSizeChange = (value: string) => {
+    setChunkSize(Number(value));
     setNeedsNewIndex(true);
   };
 
-  const handleChunkOverlapChange = (value: number) => {
-    setChunkOverlap(value);
+  const handleChunkOverlapChange = (value: string) => {
+    const numValue = parseFloat(value);
+    setChunkOverlap(numValue);
     setNeedsNewIndex(true);
   };
 
@@ -341,15 +410,15 @@ export function StoryGenerator() {
                 onChange={(e) => setNewCharacter({ ...newCharacter, name: e.target.value })}
               />
               <Input
-                placeholder="Character Role"
-                value={newCharacter.role}
-                onChange={(e) => setNewCharacter({ ...newCharacter, role: e.target.value })}
-              />
-              <Textarea
                 placeholder="Character Description"
                 value={newCharacter.description}
+                onChange={(e) => setNewCharacter({ ...newCharacter, description: e.target.value })}
+              />
+              <Textarea
+                placeholder="Character Personality"
+                value={newCharacter.personality}
                 onChange={(e) =>
-                  setNewCharacter({ ...newCharacter, description: e.target.value })
+                  setNewCharacter({ ...newCharacter, personality: e.target.value })
                 }
               />
               <Button onClick={addCharacter}>
@@ -396,7 +465,7 @@ export function StoryGenerator() {
                   min={1}
                   max={3000}
                   step={1}
-                  value={chunkSize}
+                  value={chunkSize.toString()}
                   onChange={handleChunkSizeChange}
                 />
                 <LinkedSlider
@@ -405,7 +474,7 @@ export function StoryGenerator() {
                   min={1}
                   max={600}
                   step={1}
-                  value={chunkOverlap}
+                  value={chunkOverlap.toString()}
                   onChange={handleChunkOverlapChange}
                 />
                 <LinkedSlider
@@ -414,8 +483,8 @@ export function StoryGenerator() {
                   min={1}
                   max={15}
                   step={1}
-                  value={topK}
-                  onChange={setTopK}
+                  value={topK.toString()}
+                  onChange={(value) => setTopK(parseFloat(value))}
                 />
                 <LinkedSlider
                   label="Temperature:"
@@ -423,8 +492,8 @@ export function StoryGenerator() {
                   min={0}
                   max={1}
                   step={0.01}
-                  value={temperature}
-                  onChange={setTemperature}
+                  value={temperature.toString()}
+                  onChange={(value) => setTemperature(parseFloat(value))}
                 />
                 <LinkedSlider
                   label="Top P:"
@@ -432,8 +501,8 @@ export function StoryGenerator() {
                   min={0}
                   max={1}
                   step={0.01}
-                  value={topP}
-                  onChange={setTopP}
+                  value={topP.toString()}
+                  onChange={(value) => setTopP(parseFloat(value))}
                 />
               </CardContent>
             </Card>
@@ -459,47 +528,15 @@ export function StoryGenerator() {
               <Input
                 id="setting"
                 placeholder="e.g., Medieval Europe, Futuristic Mars Colony"
-                value={storyParameters.setting}
-                onChange={(e) =>
-                  setStoryParameters({ ...storyParameters, setting: e.target.value })
-                }
+                value={setting}
+                onChange={(e) => setSetting(e.target.value as Setting)}
               />
-            </div>
-            <div>
-              <Label htmlFor="location">Location</Label>
-              <Input
-                id="location"
-                placeholder="e.g., Castle, Spaceship, Underwater City"
-                value={storyParameters.location}
-                onChange={(e) =>
-                  setStoryParameters({ ...storyParameters, location: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="genre">Genre</Label>
-              <Select
-                onValueChange={(value) =>
-                  setStoryParameters({ ...storyParameters, genre: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Genre" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fantasy">Fantasy</SelectItem>
-                  <SelectItem value="sci-fi">Sci-Fi</SelectItem>
-                  <SelectItem value="mystery">Mystery</SelectItem>
-                  <SelectItem value="horror">Horror</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div>
               <Label htmlFor="tone">Tone</Label>
               <Select
-                onValueChange={(value) =>
-                  setStoryParameters({ ...storyParameters, tone: value })
-                }
+                value={tone}
+                onValueChange={(value) => setTone(value as Tone)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Tone" />
@@ -569,11 +606,33 @@ export function StoryGenerator() {
                 </div>
               </div>
             )}
+
             {storyMode === 'slideshow' && (
               <div className="space-y-4">
-                <div className="aspect-video bg-muted flex items-center justify-center">
-                  <span className="text-muted-foreground">Slideshow placeholder</span>
-                </div>
+                {isGeneratingImages ? (
+                  <p>Generating images...</p>
+                ) : (
+                  sectionImages.length > 0 && (
+                    <div className="relative">
+                      <Image
+                        src={sectionImages[currentSlideIndex]}
+                        alt={`Slide ${currentSlideIndex + 1}`}
+                        className="w-full h-auto"
+                      />
+                      <div className="absolute bottom-0 bg-black bg-opacity-50 text-white p-4">
+                        <p>{storySections[currentSlideIndex]}</p>
+                      </div>
+                      <div className="flex justify-between mt-2">
+                        <Button variant="outline" onClick={prevSlide}>
+                          Previous
+                        </Button>
+                        <Button variant="outline" onClick={nextSlide}>
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                )}
                 <div className="flex items-center space-x-2">
                   <Button size="icon">
                     <Play className="h-4 w-4" />
@@ -593,3 +652,4 @@ export function StoryGenerator() {
     </div>
   )
 }
+
