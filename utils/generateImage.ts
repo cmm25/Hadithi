@@ -49,7 +49,7 @@ export const generateImages = async (prompt: string) => {
     }
     return urls;
 };
-
+//api endpoint needed for calling the .model 
 const _request = async (options: RequestInit) => {
     const endpoint = `https://${livepeer_sd_gateway}/text-to-image`;
     return fetch(endpoint, options);
