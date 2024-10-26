@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Moon, Sun, Upload, Download, Play, Pause, Pencil, Trash2, Wand2 } from 'lucide-react'
+import { Moon, Sun, Upload, Pencil, Trash2, Wand2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown';
 
 
 
@@ -66,11 +67,18 @@ export function StoryGenerator() {
   const [temperature, setTemperature] = useState<number>(0.7);
   const [topP, setTopP] = useState<number>(0.9);
 
-  // Livepeer variables to hold story sections
+  // Livepeer variables to hold story sections  
   const [storySections, setStorySections] = useState<string[]>([]);
-  const [sectionImages, setSectionImages] = useState<string[]>([]);
-  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+  const [playbackUrls, setPlaybackUrls] = useState<string[]>([]);
+  const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const ReactPlayer = dynamic(() => import('react-player'), { ssr: false });
+
+  // audio variables
+  const [audioUrl, setAudioUrl] = useState<string>('');
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+
+
 
   useEffect(() => {
     setMounted(true)
@@ -78,6 +86,25 @@ export function StoryGenerator() {
   useEffect(() => {
     console.log("Characters state updated:", characters);
   }, [characters]);
+
+  useEffect(() => {
+    if (
+      storyMode === 'slideshow' &&
+      playbackUrls.length === 0 &&
+      !isGeneratingVideos &&
+      storySections.length > 0
+    ) {
+      fetchVideosForSections(storySections);
+    }
+  }, [storyMode, playbackUrls.length, isGeneratingVideos, storySections]);
+
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audioUrl]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -134,35 +161,21 @@ export function StoryGenerator() {
 
 
   const formatStory = (rawStory: string) => {
-    // Remove extra spaces and line breaks
-    let formattedStory = rawStory.replace(/\s+/g, ' ').trim();
+    // Remove the numeric prefixes and quotes that OpenAI's streaming adds
+    let cleanedStory = rawStory
+      .replace(/\d+:"/g, '') // Remove numeric prefixes
+      .replace(/\\"/g, '"')  // Fix escaped quotes
+      .replace(/\\"([^"]+)\\"/g, '"$1"') // Fix dialogue quotes
+      .replace(/\\n/g, '\n') // Fix newlines
+      .replace(/\\/g, '')   // Remove remaining backslashes
+      .trim();
 
-    // Fix word breaks
-    formattedStory = formattedStory.replace(/(\w+)\s+(\w+)/g, (_, p1, p2) => {
-      if (p1.length <= 2 || p2.length <= 2) {
-        return p1 + p2;
-      }
-      return p1 + ' ' + p2;
-    });
+    // Ensure proper markdown formatting
+    if (!cleanedStory.startsWith('# ')) {
+      cleanedStory = '# ' + cleanedStory;
+    }
 
-    // Format titles and subtitles
-    formattedStory = formattedStory.replace(/([#]+)\s*([^#\n]+)/g, (_, hashes, title) => {
-      return `\n\n${hashes} ${title.trim()}\n\n`;
-    });
-
-    // Ensure proper capitalization after periods
-    formattedStory = formattedStory.replace(/\.\s+[a-z]/g, match => match.toUpperCase());
-
-    // Add paragraph breaks
-    formattedStory = formattedStory.replace(/\.\s+/g, '.\n\n');
-
-    // Remove any remaining '\n' characters
-    formattedStory = formattedStory.replace(/\\n/g, '');
-
-    // Trim extra whitespace
-    formattedStory = formattedStory.split('\n').map(line => line.trim()).join('\n');
-
-    return formattedStory;
+    return cleanedStory;
   };
 
   // split story into sections
@@ -170,8 +183,26 @@ export function StoryGenerator() {
     // Split the story into sections based on your criteria
     return story.split('\n\n').filter((section) => section.trim() !== '');
   }
+  async function generateAudio(storyText: string) {
+    setIsGeneratingAudio(true);
+    try {
+      const response = await fetch('/api/audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: storyText }),
+      });
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+    } catch (error) {
+      console.error('Error generating audio:', error);
+    } finally {
+      setIsGeneratingAudio(false);
+    }
+  }
   const generateStory = useCallback(async () => {
     setStory('Generating story...');
+    setAudioUrl('');
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -208,7 +239,7 @@ export function StoryGenerator() {
       setStorySections(sections);
 
       // Generate images by calling the API
-      await fetchImagesForSections(sections);
+      await fetchVideosForSections(sections);
 
     } catch (error) {
       console.error('Error generating story:', error);
@@ -216,10 +247,10 @@ export function StoryGenerator() {
     }
   }, [tone, setting, characters, temperature, topK, topP]);
 
-  async function fetchImagesForSections(sections: string[]) {
-    setIsGeneratingImages(true);
+  const fetchVideosForSections = async (sections: string[]) => {
+    setIsGeneratingVideos(true);
     try {
-      const response = await fetch('/api/image', {
+      const response = await fetch('/api/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sections }),
@@ -231,23 +262,21 @@ export function StoryGenerator() {
       }
 
       const data = await response.json();
-      setSectionImages(data.images);
-
+      setPlaybackUrls(data.playbackUrls);
     } catch (error) {
-      console.error('Error fetching images:', error);
+      console.error('Error fetching videos:', error);
     } finally {
-      setIsGeneratingImages(false);
+      setIsGeneratingVideos(false);
     }
-  }
-  const prevSlide = () => {
-    setCurrentSlideIndex((prevIndex) =>
-      prevIndex > 0 ? prevIndex - 1 : sectionImages.length - 1
-    );
   };
 
   const nextSlide = () => {
+    setCurrentSlideIndex((prevIndex) => (prevIndex + 1) % playbackUrls.length);
+  };
+
+  const prevSlide = () => {
     setCurrentSlideIndex((prevIndex) =>
-      prevIndex < sectionImages.length - 1 ? prevIndex + 1 : 0
+      prevIndex === 0 ? playbackUrls.length - 1 : prevIndex - 1
     );
   };
 
@@ -291,7 +320,6 @@ export function StoryGenerator() {
     setChunkOverlap(numValue);
     setNeedsNewIndex(true);
   };
-
   if (!mounted) {
     return null
   }
@@ -561,7 +589,20 @@ export function StoryGenerator() {
             <CardTitle>Story Display Options</CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs value={storyMode} onValueChange={setStoryMode}>
+            <Tabs
+              value={storyMode}
+              onValueChange={(value) => {
+                setStoryMode(value);
+                if (
+                  value === 'slideshow' &&
+                  playbackUrls.length === 0 &&
+                  !isGeneratingVideos &&
+                  storySections.length > 0
+                ) {
+                  fetchVideosForSections(storySections);
+                }
+              }}
+            >
               <TabsList>
                 <TabsTrigger value="text">Text Only</TabsTrigger>
                 <TabsTrigger value="audio">Text & Audio</TabsTrigger>
@@ -578,12 +619,9 @@ export function StoryGenerator() {
           </CardHeader>
           <CardContent>
             {storyMode === 'text' && (
-              <Textarea
-                className="min-h-[300px]"
-                placeholder="Your story will appear here..."
-                value={story}
-                readOnly
-              />
+              <div className="prose dark:prose-invert max-w-none">
+                <ReactMarkdown>{story}</ReactMarkdown>
+              </div>
             )}
             {storyMode === 'audio' && (
               <div className="space-y-4">
@@ -594,56 +632,54 @@ export function StoryGenerator() {
                   readOnly
                 />
                 <div className="flex items-center space-x-2">
-                  <Button size="icon">
-                    <Play className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon">
-                    <Pause className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon">
-                    <Download className="h-4 w-4" />
-                  </Button>
+                  {isGeneratingAudio ? (
+                    <p>Generating audio...</p>
+                  ) : audioUrl ? (
+                    <audio controls src={audioUrl}>
+                      Your browser does not support the audio element.
+                    </audio>
+                  ) : (
+                    <Button onClick={() => generateAudio(story)}>
+                      Generate Audio
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
 
             {storyMode === 'slideshow' && (
               <div className="space-y-4">
-                {isGeneratingImages ? (
-                  <p>Generating images...</p>
-                ) : (
-                  sectionImages.length > 0 && (
-                    <div className="relative">
-                      <Image
-                        src={sectionImages[currentSlideIndex]}
-                        alt={`Slide ${currentSlideIndex + 1}`}
-                        className="w-full h-auto"
-                      />
-                      <div className="absolute bottom-0 bg-black bg-opacity-50 text-white p-4">
-                        <p>{storySections[currentSlideIndex]}</p>
-                      </div>
-                      <div className="flex justify-between mt-2">
-                        <Button variant="outline" onClick={prevSlide}>
-                          Previous
-                        </Button>
-                        <Button variant="outline" onClick={nextSlide}>
-                          Next
-                        </Button>
-                      </div>
+                {isGeneratingVideos ? (
+                  <p>Generating videos...</p>
+                ) : playbackUrls.length > 0 ? (
+                  <div className="relative">
+                    <ReactPlayer
+                      url={playbackUrls[currentSlideIndex]}
+                      playing={false}
+                      controls={true}
+                      width="100%"
+                      height="100%"
+                    />
+                    <div className="absolute bottom-0 bg-black bg-opacity-50 text-white p-4">
+                      <p>{storySections[currentSlideIndex]}</p>
                     </div>
-                  )
+                    <div className="flex justify-between mt-2">
+                      <Button variant="outline" onClick={prevSlide}>
+                        Previous
+                      </Button>
+                      <Button variant="outline" onClick={nextSlide}>
+                        Next
+                      </Button>
+                    </div>
+                    {audioUrl && (
+                      <audio controls src={audioUrl}>
+                        Your browser does not support the audio element.
+                      </audio>
+                    )}
+                  </div>
+                ) : (
+                  <p>No videos available. Please generate a story first.</p>
                 )}
-                <div className="flex items-center space-x-2">
-                  <Button size="icon">
-                    <Play className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon">
-                    <Pause className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon">
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
               </div>
             )}
           </CardContent>
