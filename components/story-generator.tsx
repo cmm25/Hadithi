@@ -163,11 +163,12 @@ export function StoryGenerator() {
   const formatStory = (rawStory: string) => {
     // Remove the numeric prefixes and quotes that OpenAI's streaming adds
     let cleanedStory = rawStory
-      .replace(/\d+:"/g, '') // Remove numeric prefixes
-      .replace(/\\"/g, '"')  // Fix escaped quotes
-      .replace(/\\"([^"]+)\\"/g, '"$1"') // Fix dialogue quotes
+      .replace(/\d+:/g, '') // Remove numeric prefixes
+      .replace(/"/g, '') // Remove quotes
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .replace(/\s+([.,!?])/g, '$1') // Remove spaces before punctuation
       .replace(/\\n/g, '\n') // Fix newlines
-      .replace(/\\/g, '')   // Remove remaining backslashes
+      .replace(/\\/g, '') // Remove remaining backslashes
       .trim();
 
     // Ensure proper markdown formatting
@@ -619,7 +620,7 @@ export function StoryGenerator() {
           </CardHeader>
           <CardContent>
             {storyMode === 'text' && (
-              <div className="prose dark:prose-invert max-w-none">
+              <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap">
                 <ReactMarkdown>{story}</ReactMarkdown>
               </div>
             )}
