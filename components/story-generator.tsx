@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import dynamic from 'next/dynamic';
+import Image from 'next/image'
 import { useTheme } from 'next-themes'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -69,10 +69,10 @@ export function StoryGenerator() {
 
   // Livepeer variables to hold story sections  
   const [storySections, setStorySections] = useState<string[]>([]);
-  const [playbackUrls, setPlaybackUrls] = useState<string[]>([]);
-  const [isGeneratingVideos, setIsGeneratingVideos] = useState(false);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const ReactPlayer = dynamic(() => import('react-player'), { ssr: false });
+
 
   // audio variables
   const [audioUrl, setAudioUrl] = useState<string>('');
@@ -88,15 +88,16 @@ export function StoryGenerator() {
   }, [characters]);
 
   useEffect(() => {
-    if (
-      storyMode === 'slideshow' &&
-      playbackUrls.length === 0 &&
-      !isGeneratingVideos &&
-      storySections.length > 0
-    ) {
-      fetchVideosForSections(storySections);
+    if (currentSlideIndex >= imageUrls.length) {
+      setCurrentSlideIndex(0);
     }
-  }, [storyMode, playbackUrls.length, isGeneratingVideos, storySections]);
+  }, [imageUrls, currentSlideIndex]);
+  // Check length after setting both arrays
+  useEffect(() => {
+    if (imageUrls.length !== storySections.length) {
+      console.error('Mismatch between imageUrls and storySections lengths.');
+    }
+  }, [imageUrls, storySections]);
 
   useEffect(() => {
     return () => {
@@ -204,6 +205,7 @@ export function StoryGenerator() {
   const generateStory = useCallback(async () => {
     setStory('Generating story...');
     setAudioUrl('');
+    setImageUrls([]);
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -239,8 +241,7 @@ export function StoryGenerator() {
       const sections = splitStoryIntoSections(storyContent);
       setStorySections(sections);
 
-      // Generate images by calling the API
-      await fetchVideosForSections(sections);
+      await fetchImagesForSections(sections);
 
     } catch (error) {
       console.error('Error generating story:', error);
@@ -248,10 +249,10 @@ export function StoryGenerator() {
     }
   }, [tone, setting, characters, temperature, topK, topP]);
 
-  const fetchVideosForSections = async (sections: string[]) => {
-    setIsGeneratingVideos(true);
+  const fetchImagesForSections = async (sections: string[]) => {
+    setIsGeneratingImages(true);
     try {
-      const response = await fetch('/api/video', {
+      const response = await fetch('/api/images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sections }),
@@ -263,22 +264,31 @@ export function StoryGenerator() {
       }
 
       const data = await response.json();
-      setPlaybackUrls(data.playbackUrls);
+      setImageUrls(data.imageUrls);
     } catch (error) {
-      console.error('Error fetching videos:', error);
+      console.error('Error fetching images:', error);
     } finally {
-      setIsGeneratingVideos(false);
+      setIsGeneratingImages(false);
     }
   };
 
   const nextSlide = () => {
-    setCurrentSlideIndex((prevIndex) => (prevIndex + 1) % playbackUrls.length);
+    setCurrentSlideIndex((prevIndex) => {
+      const newIndex = prevIndex + 1;
+      if (newIndex >= imageUrls.length) {
+        return 0;
+      }
+      return newIndex;
+    });
   };
 
   const prevSlide = () => {
-    setCurrentSlideIndex((prevIndex) =>
-      prevIndex === 0 ? playbackUrls.length - 1 : prevIndex - 1
-    );
+    setCurrentSlideIndex((prevIndex) => {
+      if (prevIndex === 0) {
+        return imageUrls.length - 1;
+      }
+      return prevIndex - 1;
+    });
   };
 
   const addCharacter = () => {
@@ -330,7 +340,7 @@ export function StoryGenerator() {
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
         <header className="flex justify-between items-center">
-          <h1 className="text-4xl font-bold">AI Story Generator</h1>
+          <h1 className="text-4xl font-bold">Hadithi</h1>
           <Button
             variant="ghost"
             size="icon"
@@ -596,11 +606,11 @@ export function StoryGenerator() {
                 setStoryMode(value);
                 if (
                   value === 'slideshow' &&
-                  playbackUrls.length === 0 &&
-                  !isGeneratingVideos &&
+                  imageUrls.length === 0 &&
+                  !isGeneratingImages &&
                   storySections.length > 0
                 ) {
-                  fetchVideosForSections(storySections);
+                  fetchImagesForSections(storySections);
                 }
               }}
             >
@@ -636,7 +646,7 @@ export function StoryGenerator() {
                   {isGeneratingAudio ? (
                     <p>Generating audio...</p>
                   ) : audioUrl ? (
-                    <audio controls src={audioUrl}>
+                    <audio controls src={audioUrl} className="w-full mt-4">
                       Your browser does not support the audio element.
                     </audio>
                   ) : (
@@ -650,36 +660,56 @@ export function StoryGenerator() {
 
             {storyMode === 'slideshow' && (
               <div className="space-y-4">
-                {isGeneratingVideos ? (
-                  <p>Generating videos...</p>
-                ) : playbackUrls.length > 0 ? (
-                  <div className="relative">
-                    <ReactPlayer
-                      url={playbackUrls[currentSlideIndex]}
-                      playing={false}
-                      controls={true}
-                      width="100%"
-                      height="100%"
-                    />
-                    <div className="absolute bottom-0 bg-black bg-opacity-50 text-white p-4">
-                      <p>{storySections[currentSlideIndex]}</p>
+                {isGeneratingImages ? (
+                  <p>Generating images...</p>
+                ) : imageUrls.length > 0 ? (
+                  <>
+                    <div className="relative w-full h-[720px]">
+                      {imageUrls[currentSlideIndex] ? (
+                        <Image
+                          src={imageUrls[currentSlideIndex]}
+                          alt={`Slide ${currentSlideIndex + 1}`}
+                          fill
+                          style={{ objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <p>Image not available</p>
+                      )}
+                      {storySections[currentSlideIndex] && (
+                        <div className="absolute bottom-0 w-full bg-black bg-opacity-50 text-white p-4">
+                          <p>{storySections[currentSlideIndex]}</p>
+                        </div>
+                      )}
                     </div>
                     <div className="flex justify-between mt-2">
-                      <Button variant="outline" onClick={prevSlide}>
+                      <Button variant="outline" onClick={prevSlide} disabled={imageUrls.length <= 1}>
                         Previous
                       </Button>
-                      <Button variant="outline" onClick={nextSlide}>
+                      <Button variant="outline" onClick={nextSlide} disabled={imageUrls.length <= 1}>
                         Next
                       </Button>
                     </div>
-                    {audioUrl && (
-                      <audio controls src={audioUrl}>
+                    <div className="flex justify-center mt-4">
+                      {imageUrls.map((_, index) => (
+                        <div
+                          key={index}
+                          className={`h-2 w-2 mx-1 rounded-full ${index === currentSlideIndex ? 'bg-blue-500' : 'bg-gray-300'
+                            }`}
+                        ></div>
+                      ))}
+                    </div>
+                    {audioUrl ? (
+                      <audio controls src={audioUrl} className="w-full mt-4">
                         Your browser does not support the audio element.
                       </audio>
+                    ) : isGeneratingAudio ? (
+                      <p>Generating audio...</p>
+                    ) : (
+                      <Button onClick={() => generateAudio(story)}>Generate Audio</Button>
                     )}
-                  </div>
+                  </>
                 ) : (
-                  <p>No videos available. Please generate a story first.</p>
+                  <p>No images available. Please generate a story first.</p>
                 )}
               </div>
             )}
@@ -689,4 +719,6 @@ export function StoryGenerator() {
     </div>
   )
 }
+
+
 
