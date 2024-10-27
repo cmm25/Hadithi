@@ -5,7 +5,6 @@ Hadithi is an AI-powered web application that allows users to create engaging st
 ## Table of Contents
 
 - [Features](#features)
-- [Demo](#demo)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Configuration](#configuration)
