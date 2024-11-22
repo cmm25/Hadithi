@@ -1,3 +1,52 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "extends": [
+    "next",
+    "next/core-web-vitals",
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended"
+  ],
+  "plugins": ["prettier", "@typescript-eslint", "react", "react-hooks"],
+  "rules": {
+    "@typescript-eslint/array-type": [
+      "warn",
+      {
+        "default": "array"
+      }
+    ],
+    "@typescript-eslint/consistent-type-assertions": [
+      "warn",
+      {
+        "assertionStyle": "as",
+        "objectLiteralTypeAssertions": "never"
+      }
+    ],
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/react-in-jsx-scope": "off",
+    "import/no-unresolved": "error",
+    "jsx-a11y/anchor-is-valid": "off",
+    "react/prop-types": "off",
+    "@typescript-eslint/no-empty-interface": "error",
+    "@typescript-eslint/no-require-imports": "error"
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  }
 }
